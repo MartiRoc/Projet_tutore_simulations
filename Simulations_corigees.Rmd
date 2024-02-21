@@ -1,0 +1,2420 @@
+---
+title: | 
+  | 
+  | \vspace{0.5 cm} \Huge \textbf{Simulations}
+  | \vspace{0.5 cm} \LARGE \text{Projet tutoré}
+  | \vspace{4 cm} ![](image.png){ width=50% }
+  | \pagenumbering{gobble}
+output: 
+  pdf_document :
+    extra_dependencies: ["bbm", "amsmath", "amsthm", "fancyhdr", "graphicx"]
+    number_sections: FALSE
+---
+
+<!-- ###### page de garde -->
+
+\vspace{4 cm} \LARGE \text{ROCHAS Martin et al.}\newline
+\text{M2 SSD 2023 - 2024}\newpage
+
+<!-- ###### Sommaire -->
+
+\newpage
+\normalsize
+\pagenumbering{gobble}
+\renewcommand\contentsname{Sommaire}
+\tableofcontents
+\newpage
+\pagenumbering{arabic}
+
+<!-- ###### En tête et pied de page : -->
+
+<!-- en tête -->
+
+\pagestyle{fancy}
+\renewcommand{\headrulewidth}{1pt} 
+\fancyhead[L]{\text{Rochas M et al.}}
+\fancyhead[R]{M2 SSD UGA 2023.2024}
+
+<!-- pied de page -->
+
+\fancyfoot[R]{\textit{page \thepage}}
+\fancyfoot[C]{}
+\setlength{\parindent}{0pt}
+
+<!-- ################################################### DEBUT -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = "center")
+```
+
+```{r}
+library(scales)
+library(xlsx)
+library(tidyr)
+```
+
+Dans toute la suite on considère des modèles PK parent simple, 1 comp' avec absorption & élimination linéaires du 1er ordre.
+
+# Simulations sans covariables
+
+(Description du modèle dans le rapport et résolution de l'équation différentielle en annexe)
+
+## Article 43
+
+Lijun, L., Li, Q., De-Wei, Shang, S., Wen-Biao, Wei, H. H., Guo, Y., Xi-Pei, Wang, H., Yu-Peng, Ren, R., An-Ning, Pei-Xin, Fu, P., Shuang-Min, Ji, & Lu, J. (2012). Population pharmacokinetics of clozapine and its primary metabolite norclozapine in Chinese patients with schizophrenia., 33(11), 1409‑1416. http://www.cqvip.com/QK/95561A/201211/43796755.html
+
+(Lijun et al., 2012)
+
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4011352/
+
+On récupère les paramètres estimés et on simule d'abord un seul profil (individu) pour une seule dose avec le modèle de l'article (on prend $t_{D} = 0$), 
+
+### Simulation de profils moyens sans IIV et résidus
+
+**1 individu (sans covariables), 1 dose, sur 24h, mesures toutes les heures**
+
+\begin {equation}
+C\left(t\right)=\frac{D}{V}
+\frac{k_{a}}{k_{a}-k}
+\left(e^{-k\left(t-t_{D}\right)}-e^{-k_{a}\left(t-t_{D}\right)}\right)
+\end {equation}
+
+```{r}
+### Paramètres de la simulation
+
+  D <- 300 # mg
+  t_max <- 48 # en heures car kf - k - ka sont en (1/h) dans l'article
+  nb_mesures <- 480 # donc toutes les heures si = t_max
+
+### Paramètres du modèle article 43 
+  
+  Cl <- 21.9 #  info : Cl_pop -> RSE % = 6
+  ka <- 1.6 # coeff' absorption fixé
+  V <- 526 # info : V -> RSE % = 10
+  k <- Cl/V # coeff' d'élimination
+  
+### Simulations
+  
+  t <- seq(0,t_max,length.out = nb_mesures) # temps de mesures
+  C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+
+### Graphe
+  
+plot(t,C, type = "l", main = "Profil PK moyen, modèle article 43, 1 dose de 300mg")
+```
+
+**1 individu (sans covariables), multi-doses, sur 7x24h**
+
+Par superposition on obtient,
+
+\begin {equation}
+C\left(t\right)=\sum^{n}_{i=1}\frac{D_{i}}{V}
+\frac{k_{a}}{k_{a}-k}
+\left(e^{-k\left(t-t_{D_{i}}\right)}-e^{-k_{a}\left(t-t_{D_{i}}\right)}\right)
+\end {equation}
+
+```{r}
+par(mfrow = c(1,3))
+
+### Paramètres de la simulation
+
+D <- 300 # en mg
+jours <- 7
+inter_doses <- 24 # en heures 
+nb_doses_supp <- 6 # si 0 on retombe sur le profil ci-dessus
+
+### Simulation du profil
+
+f <- function(){
+
+  t <- seq(0,jours*24,length.out = jours*24) # mesures toutes les heures
+  
+  # première dose
+  C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+  # ajout des doses suivantes par superposition 
+  for (i in 1:(nb_doses_supp)) {
+    if(nb_doses_supp>0){
+    indice_t_Di <- min(which(t>=inter_doses*i))
+    avant_t_Di <- numeric(indice_t_Di-1)
+    t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+    apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+    C <- C + c(avant_t_Di,apres_t_Di)}
+  }
+  
+  plot(t,C, type = "l", ylim = c(0,4.5))
+  
+  return(data.frame(t,C))}
+
+G1 <- f()
+
+jours <- 7
+inter_doses <- 12
+nb_doses_supp <- 13
+
+G2 <- f()
+
+jours <- 7
+inter_doses <- 8
+nb_doses_supp <- 20
+
+G3 <- f()
+```
+
+Respectivement avec des doses de $300$ mg toutes les $24$h, $12$h et $8h$. On obtient les mêmes profils moyens avec Monolix (même steady-state resp. environ $0.5$, $1$ et $1.5$). 
+
+### Simulation de profils avec IIV et résidus
+
+Remarques : 
+
+- ils utilisent dans l'article un modèle combiné additif / proportionnel pour les résidus.
+
+- Dans l'article les variabilité inter-individus (IIV) des paramètres du modèle (Cl et V) sont modélisées par des lois log-normales. De plus l'IIV est donnée sous forme de coefficient de variation $\text{CV} \in [0,1]$. Ainsi pour un certain paramètre $p$ du modèle PK, ce paramètre $p_j$ pour un certain individu $j$ se distribue de la même façon que,
+$$p_{\text{pop}}\times\exp(\eta),$$
+
+avec $p_{\text{pop}}$ la valeur du paramètre estimée sur la population et, 
+$$\eta \sim \mathcal{N}\left(0,\sqrt{\ln\left(1+\text{CV}^2\right)}\right).$$
+
+Pour passer de $\text{CV}$ à l'écart-type de $\eta$ on utilise une certaine propriété élémentaire de la loi log-normale. 
+
+**ATTENTION ERREUR** : le dernier point aurait été vrai si $\text{CV}$ était égal à $\sigma / \mu$ (écart-type sur espérance) comme on peut le voir en faisant des recherches sur la notion de "coefficient de variation" en statistique. Hélas après discussion on a appris que l'IIV en pourcentage, parfois qualifiée par $\text{CV}$, était en réalité simplement $\omega \times 100$ (lorsque donné en pourcentage). Ainsi, 
+$$\omega = \frac{CV}{100}$$ et, 
+$$\eta \sim \mathcal{N}\left(0,\omega\right)...$$
+
+### 200 individus, dose 300 mg toutes les 24 heures
+
+```{r}
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 24 # en heures 
+  nb_doses_supp <- 6
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 200
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429 # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657 # IIV log-normal et CV = 65.7%
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+#### GRAPHE
+  
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,5),
+     main = " Simulation de (200) profils PK clozapine,
+ dose = 300 mg toute les 24 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  lines(t, profil_sim[j,], type = "l", col = alpha("black", 0.1))
+}
+lines(G1$t, G1$C, col = "green", lwd = 2)
+legend(0,5,
+       legend = "profil moyen (sans IIV et résidus)",
+       cex = 0.8, col = c("green"), lty = 1)
+  
+```
+
+On fait pareil mais avec des doses toutes les $12$ et $8$ heures on ne montre pas le code. On change juste le début du chunk précédent, 
+
+Pour dose / 12h,
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 12 # en heures 
+  nb_doses_supp <- 13
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+Pour dose / 8h
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 8 # en heures 
+  nb_doses_supp <- 20
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+
+### 200 individus, dose 300 mg toutes les 12 et 8 heures
+
+```{r, echo=FALSE, out.width="80%"}
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 12 # en heures 
+  nb_doses_supp <- 13
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 200
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429 # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657 # IIV log-normal et CV = 65.7%
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+
+#### GRAPHE
+  
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,5),
+     main = " Simulation de (200) profils PK clozapine,
+ dose = 300 mg toute les 12 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  lines(t, profil_sim[j,], type = "l", col = alpha("black", 0.1))
+}
+lines(G2$t, G2$C, col = "green", lwd = 2)
+legend(0,5,
+       legend = "profil moyen (sans IIV et résidus)",
+       cex = 0.8, col = c("green"), lty = 1)
+
+```
+
+```{r, echo=FALSE, out.width="80%"}
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 8 # en heures 
+  nb_doses_supp <- 20
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 200
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429 # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657 # IIV log-normal et CV = 65.7%
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+
+#### GRAPHE
+  
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,5),
+     main = " Simulation de (200) profils PK clozapine,
+ dose = 300 mg toute les 8 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  lines(t, profil_sim[j,], type = "l", col = alpha("black", 0.1))
+}
+lines(G3$t, G3$C, col = "green", lwd = 2)
+legend(0,5,
+       legend = "profil moyen (sans IIV et résidus)",
+       cex = 0.8, col = c("green"), lty = 1)
+```
+
+### Création d'une base de 2000 profils pour chaque design d'administration (/24h, /12h, /8h)
+
+On utilise le gros chunk de code précédent avec n_ind <- 2000 et D <- 300. 
+
+On appel la base :  *df_43_sc* (43 car on simule à partir de l'article 43 et sc car sans les covariables sexe et tabagisme). 
+
+**Remarque** on simule ici des femmes non-fumeuses (individus de référence).
+
+Voici les 3 premières lignes et 7 premières colonnes de la base en question (les autres colonnes sont les temps suivants) :
+
+```{r, echo=T, eval=FALSE}
+##################################### design = 1 (1 dose de 300 / 24h)
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 24 # en heures 
+  nb_doses_supp <- 6
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429 # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657 # IIV log-normal et CV = 65.7%
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+design <- numeric(n_ind)+1  
+df43_temp1 <- cbind(design,param_ind,profil_sim)
+
+# SAUVEGARDE
+
+save(df43_temp1, file = "df43_temp1.RData")
+
+##################################### design = 2 (2 dose de 300 / 24h)
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 12 # en heures 
+  nb_doses_supp <- 13
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429 # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657 # IIV log-normal et CV = 65.7%
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+design <- numeric(n_ind)+2  
+df43_temp2 <- cbind(design,param_ind,profil_sim)
+
+# SAUVEGARDE
+
+save(df43_temp2, file = "df43_temp2.RData")
+
+##################################### design = 3 (3 dose de 300 / 24h)
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 8 # en heures 
+  nb_doses_supp <- 20
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429 # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657 # IIV log-normal et CV = 65.7%
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+design <- numeric(n_ind)+3  
+df43_temp3 <- cbind(design,param_ind,profil_sim)
+
+# SAUVEGARDE
+
+save(df43_temp3, file = "df43_temp3.RData")
+
+```
+
+On concatène (en hauteur) les bases avec différents design (1, 2 et 3), voici les 3 premières lignes et 7 premières colonnes. 
+
+```{r}
+# On les a enregistré car cela met du temps que nous n'avons plus
+load(file = "df43_temp1.RData")
+load(file = "df43_temp2.RData")
+load(file = "df43_temp3.RData")
+
+df_43_sc <- rbind(df43_temp1,df43_temp2,df43_temp3)
+head(df_43_sc[,1:7],3)
+
+# save(df_43_sc, file = "df_43_sc.RData")
+
+```
+
+La variable *design* encode le nombre de doses de $300$ mg de clozapine administrée par jour (à intervalles réguliers). Les $4$ colonnes qui suivent sont les paramètre PK simulés des individus. Les colonnes 0 et suivantes les mesures de concentration (nom de colonne = temps de mesure).
+
+## Article 51
+
+Ng, W., Uchida, H., Ismail, Z., Mamo, D. C., Rajji, T. K., Remington, G., Sproule, B., Pollock, B. G., Mulsant, B. H., & Bies, R. R. (2009). Clozapine Exposure and the Impact of Smoking and Gender : A Population Pharmacokinetic Study. Therapeutic Drug Monitoring, 31(3), 360‑366. https://doi.org/10.1097/ftd.0b013e31819c7037
+
+(Ng et al., 2009)
+
+file:///C:/Users/33684/Downloads/ng2009.pdf
+
+### Simulation de profils avec IIV sans covariable (param' des résidus non-indiqués)
+
+Le modèle est PRESQUE identique à celui de l'article $43$ ci-dessus (même modélisation pour l'IIV et les résidus également), on reprend donc le code précédent en changeant les paramètres (et en faisant la petite modification). Voici la solution du modèle PK pour cet article,
+
+\begin {equation}
+C\left(t\right)=\frac{D}{V}
+\frac{fk_{a}}{k_{a}-k}
+\left(e^{-k\left(t-t_{D}\right)}-e^{-k_{a}\left(t-t_{D}\right)}\right)
+\end {equation}
+
+la différence avec l'article $43$ est le facteur $f = 0.817$, en effet dans le modèle PK considéré ici il a été estimé qu'une fraction $1-f$ de la clozapine présente dans les intestins était directement assimilée en norclozapine par l'organisme ("effet de premier passage").  
+
+**Hypothèse de simulation** : pour les résidus, on prend $\sigma = 0.1$ pour l'erreur additive et $\sigma_{\%} = 20 \%$ pour l'erreur proportionnelle.
+
+```{r, echo=T}
+### Paramètres de la simulation
+
+  D <- 300 # mg
+  t_max <- 48 # en heures car kf - k - ka sont en (1/h) dans l'article
+  nb_mesures <- 480 # donc toutes les heures si = t_max
+
+### Paramètres du modèle article 51 
+  
+  Cl <- 18 
+  ka <- 0.136 
+  V <- 7*70 
+  k <- Cl/V 
+  fa = 0.817
+  
+### Simulations
+  
+  t <- seq(0,t_max,length.out = nb_mesures) # temps de mesures
+  C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+
+par(mfrow = c(1,3))
+
+### Paramètres de la simulation
+
+D <- 300 # en mg
+jours <- 7
+inter_doses <- 24 # en heures 
+nb_doses_supp <- 6 # si 0 on retombe sur le profil ci-dessus
+
+### Simulation du profil
+
+f <- function(){
+
+  t <- seq(0,jours*24,length.out = jours*24) # mesures toutes les heures
+  
+  # première dose
+  C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t)) # facteur fa à la fin
+  
+  # ajout des doses suivantes par superposition 
+  for (i in 1:(nb_doses_supp)) {
+    if(nb_doses_supp>0){
+    indice_t_Di <- min(which(t>=inter_doses*i))
+    avant_t_Di <- numeric(indice_t_Di-1)
+    t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+    apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+    C <- C + c(avant_t_Di,apres_t_Di)}
+  }
+  
+  C <- fa*C
+  plot(t,C, type = "l", ylim = c(0,4.5))
+  
+  return(data.frame(t,C))}
+
+G1 <- f()
+
+jours <- 7
+inter_doses <- 12
+nb_doses_supp <- 13
+
+G2 <- f()
+
+jours <- 7
+inter_doses <- 8
+nb_doses_supp <- 20
+
+G3 <- f()
+```
+
+Profils PK moyen simulés (sans IIV et résidus) respectivement avec des doses de $300$ mg toutes les $24$h, $12$h et $8h$. On obtient les mêmes profils moyens avec Monolix (même steady-state resp. environ $0.5$, $1$ et $2$). 
+
+```{r, out.width="80%"}
+#################################### 1 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 24 # en heures 
+  nb_doses_supp <- 6
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 500
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl)) 
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+#### GRAPHE
+  
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,5),
+     main = " Simulation de (500) profils PK clozapine,
+ dose = 300 mg toute les 24 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  lines(t, profil_sim[j,], type = "l", col = alpha("black", 0.1))
+}
+lines(G1$t, G1$C, col = "green", lwd = 2)
+legend(0,5,
+       legend = "profil moyen (sans IIV et résidus)",
+       cex = 0.8, col = c("green"), lty = 1)
+
+```
+
+```{r, echo=FALSE, out.width="80%"}
+#################################### 2 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 12 # en heures 
+  nb_doses_supp <- 13
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 500
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl)) 
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+#### GRAPHE
+  
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,5),
+     main = " Simulation de (500) profils PK clozapine,
+ dose = 300 mg toute les 12 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  lines(t, profil_sim[j,], type = "l", col = alpha("black", 0.1))
+}
+lines(G2$t, G2$C, col = "green", lwd = 2)
+legend(0,5,
+       legend = "profil moyen (sans IIV et résidus)",
+       cex = 0.8, col = c("green"), lty = 1)
+
+```
+
+```{r, echo=FALSE, out.width="80%"}
+#################################### 3 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 8 # en heures 
+  nb_doses_supp <- 20
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 500
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl)) 
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+#### GRAPHE
+  
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,5),
+     main = " Simulation de (500) profils PK clozapine,
+ dose = 300 mg toute les 8 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  lines(t, profil_sim[j,], type = "l", col = alpha("black", 0.1))
+}
+lines(G3$t, G3$C, col = "green", lwd = 2)
+legend(0,5,
+       legend = "profil moyen (sans IIV et résidus)",
+       cex = 0.8, col = c("green"), lty = 1)
+
+```
+
+### Création d’une base de 2000 profils pour chaque design d’administration (/24h, /12h, /8h)
+
+```{r, eval=FALSE}
+#################################### 1 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 24 # en heures 
+  nb_doses_supp <- 6
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl)) 
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+    print(j)
+  
+  }
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+
+design <- numeric(n_ind)+1 
+df51_temp1 <- cbind(design,param_ind,profil_sim)
+
+# SAUVEGARDE
+
+save(df51_temp1, file = "df51_temp1.RData")
+
+#################################### 2 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 12 # en heures 
+  nb_doses_supp <- 13
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl)) 
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+    print(j)
+  
+  }
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+
+design <- numeric(n_ind)+2 
+df51_temp2 <- cbind(design,param_ind,profil_sim)
+
+# SAUVEGARDE
+
+save(df51_temp2, file = "df51_temp2.RData")
+
+#################################### 3 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 8 # en heures 
+  nb_doses_supp <- 20
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 4, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K")
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl)) 
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+    print(j)
+  
+  }
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+
+design <- numeric(n_ind)+3 
+df51_temp3 <- cbind(design,param_ind,profil_sim)
+
+# SAUVEGARDE
+
+save(df51_temp3, file = "df51_temp3.RData")
+
+```
+
+```{r}
+# évaluer le chunk précédent qui ne s'execute pas par défaut
+
+load(file = "df51_temp1.RData")
+load(file = "df51_temp2.RData")
+load(file = "df51_temp3.RData")
+
+
+df_51_sc <- rbind(df51_temp1,df51_temp2,df51_temp3)
+
+# save(df_51_sc, file = "df_51_sc.RData")
+
+head(df_51_sc[,1:7],3)
+
+```
+
+## Concaténation des deux bases de profils PK simulés, base df_sc
+
+```{r}
+load("df_43_sc.RData")
+load("df_51_sc.RData")
+
+article <- numeric(length(df_43_sc[,1]))+43
+df_43_sc <- cbind(article,df_43_sc)
+
+article <- numeric(length(df_51_sc[,1]))+51
+df_51_sc <- cbind(article,df_51_sc)
+
+df_sc <- rbind(df_43_sc,df_51_sc)
+
+# save(df_sc, file = "df_sc.RData")
+
+```
+
+On rajoute une colonne *article* pour savoir d'où viennent les profils (quel modèle / article).
+
+# Simulations avec covariables : sexe et tabagisme
+
+## Test sur l'article 43, 500 profils, 300mg / 24h
+
+- fumer → +45% sur la clairance (RSE % 34.9)
+- être un homme → +20.8% sur la clairance (RSE % 44.6)
+- Pas d’interaction détectée entre les deux covariables.
+
+On choisit de simuler à peu près 50% d'hommes, et 25% de fumeurs hommes/femmes confondus (ordre de grandeur de santepubliquefrance.fr).
+
+```{r, fig.height=12}
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 24 # en heures 
+  nb_doses_supp <- 6
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 500
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 6, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K", "sexe", "tabac")
+  
+  #AJOUT COVARIABLES
+  param_ind$sexe <- rbinom(n_ind,1,0.5)
+  param_ind$tabac <- rbinom(n_ind,1,0.25)
+    
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429  # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657  # IIV log-normal et CV = 65.7%
+  
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  #AJOUT effet covariables
+  param_ind$CL <- ifelse(param_ind$tabac == 1,
+                         param_ind$CL * 1.45, param_ind$CL)
+  param_ind$CL <- ifelse(param_ind$sexe == 1,
+                         param_ind$CL * 1.208, param_ind$CL)
+  
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+
+#### GRAPHES
+  
+par(mfrow = c(2,1))
+  
+# discri' homme / femme
+
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,3),
+     main = " Simulation de (500) profils PK clozapine,
+ dose = 300 mg toute les 24 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  couleur <- ifelse(param_ind[j,5]==1, "darkblue", "green")
+  lines(t, profil_sim[j,], type = "l", col = alpha(couleur, 0.05))
+}
+legend(0,3,
+       legend = c("homme", "femme"),
+       cex = 0.8, col = c("darkblue","green"), lty = c(1,1))
+
+# discri' fumeur / non-fumeur
+
+plot(t, profil_sim[1,], type = "l", col = alpha("black", 0.1), ylim = c(-0.3,3),
+     main = " Simulation de (500) profils PK clozapine,
+ dose = 300 mg toute les 24 heures",
+     cex.main = 0.8, xlab = "temps (heure)", ylab = "Concentration (mg/L)",
+ cex.lab = 0.8)
+for (j in 2:n_ind) {
+  couleur <- ifelse(param_ind[j,6]==1, "red", "blue")
+  lines(t, profil_sim[j,], type = "l", col = alpha(couleur, 0.05))
+}
+legend(0,3,
+       legend = c("fumeur", "non-fumeur"),
+       cex = 0.8, col = c("red","blue"), lty = c(1,1))
+
+```
+
+On distingue l'augmentation sur la clairance des attributs *homme* et *fumeur*, les profils des individus possédant l'un de ces facteurs sont légèrement plus bas que les individus ne les possédants pas (une augmentation de la clairance implique que la clozapine est éliminée plus vite).  
+
+## Génération des bases df_43_ac, df_51_ac (ac = avec covariables)
+
+Pour chacune des bases nous allons simuler $2000$ profils pour chaque design (dose /24h, /12h, /8h), on simule environ $50\%$ d'hommes et $25\%$ de fumeurs, il n'y a pas d'interaction notable (selon les deux articles) entre ces deux covariables, on ajoute donc les effets. 
+
+La base finale contiendra l'origine des profils (quel modèle / article), le design des doses (1= /24h, 2= /12h et 3= /8h), tous les paramètres générés (ou fixés) pour les simulations (CL, V, Ka, K), les deux covariables sexe et tabac, et enfin les concentrations (temps correspondant = nom de la colonne). Dans cet ordre. 
+
+**df_43_ac**
+
+- Fumer → +45% sur la clairance (RSE % 34.9),
+- être un homme → +20.8% sur la clairance (RSE % 44.6),
+- pas d'interaction détectée entre les deux covariables.
+
+```{r, echo=FALSE, eval=FALSE}
+##################################### design = 1 (1 dose de 300 / 24h)
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 24 # en heures 
+  nb_doses_supp <- 6
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+# paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 6, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K", "sexe", "tabac")
+  
+  #AJOUT COVARIABLES
+  param_ind$sexe <- rbinom(n_ind,1,0.5)
+  param_ind$tabac <- rbinom(n_ind,1,0.25)
+    
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429  # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657  # IIV log-normal et CV = 65.7%
+  
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  #AJOUT effet covariables
+  param_ind$CL <- ifelse(param_ind$tabac == 1,
+                         param_ind$CL * 1.45, param_ind$CL)
+  param_ind$CL <- ifelse(param_ind$sexe == 1,
+                         param_ind$CL * 1.208, param_ind$CL)
+  
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+design <- numeric(n_ind)+1  
+df43_temp1_ac <- cbind(design,param_ind,profil_sim)
+
+save(df43_temp1_ac, file = "df43_temp1_ac.RData")
+
+##################################### design = 2 (2 dose de 300 / 24h)
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 12 # en heures 
+  nb_doses_supp <- 13
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 6, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K", "sexe", "tabac")
+  
+  #AJOUT COVARIABLES
+  param_ind$sexe <- rbinom(n_ind,1,0.5)
+  param_ind$tabac <- rbinom(n_ind,1,0.25)
+    
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429  # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657  # IIV log-normal et CV = 65.7%
+  
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  #AJOUT effet covariables
+  param_ind$CL <- ifelse(param_ind$tabac == 1,
+                         param_ind$CL * 1.45, param_ind$CL)
+  param_ind$CL <- ifelse(param_ind$sexe == 1,
+                         param_ind$CL * 1.208, param_ind$CL)
+  
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+design <- numeric(n_ind)+2  
+df43_temp2_ac <- cbind(design,param_ind,profil_sim)
+
+save(df43_temp2_ac, file = "df43_temp2_ac.RData")
+
+##################################### design = 3 (3 dose de 300 / 24h)
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 8 # en heures 
+  nb_doses_supp <- 20
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 6, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K", "sexe", "tabac")
+  
+  #AJOUT COVARIABLES
+  param_ind$sexe <- rbinom(n_ind,1,0.5)
+  param_ind$tabac <- rbinom(n_ind,1,0.25)
+    
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.429  # IIV log-normal et CV = 42.9%
+  sd_IIV_V <- 0.657  # IIV log-normal et CV = 65.7%
+  
+  # clairance
+  param_ind$CL <- param_ind$CL + 21.9*exp(rnorm(n_ind,0,sd_IIV_Cl)) # RSE % 6
+  #AJOUT effet covariables
+  param_ind$CL <- ifelse(param_ind$tabac == 1,
+                         param_ind$CL * 1.45, param_ind$CL)
+  param_ind$CL <- ifelse(param_ind$sexe == 1,
+                         param_ind$CL * 1.208, param_ind$CL)
+  
+  # volume de distrib
+  param_ind$V <- param_ind$V + 526*exp(rnorm(n_ind,0,sd_IIV_V)) # RSE % 10
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 1.3 # fixé
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+  
+  }
+  
+# test
+# plot(t, profil_sim[1,], type = "l")
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.266 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.162   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+design <- numeric(n_ind)+3  
+df43_temp3_ac <- cbind(design,param_ind,profil_sim)
+
+save(df43_temp3_ac, file = "df43_temp3_ac.RData")
+
+```
+
+```{r}
+# On les a enregistré car cela met du temps que nous n'avons plus
+load(file = "df43_temp1_ac.RData")
+load(file = "df43_temp2_ac.RData")
+load(file = "df43_temp3_ac.RData")
+
+df_43_ac <- rbind(df43_temp1_ac,df43_temp2_ac,df43_temp3_ac)
+# save(df_43_ac, file = "df_43_ac.RData")
+head(round(df_43_ac[,1:9],3),3)
+```
+
+**df_51_ac**
+
+- Fumer → +33.3% sur la clairance (SE % 11.5),
+- être un homme → +24.8% sur la clairance (SE % 61.7),
+- pas d'interaction détecté entre les deux covariables.
+
+```{r, eval=FALSE}
+#################################### 1 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 24 # en heures 
+  nb_doses_supp <- 6
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 6, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K", "sexe", "tabac")
+  
+  #AJOUT COVARIABLES
+  param_ind$sexe <- rbinom(n_ind,1,0.5)
+  param_ind$tabac <- rbinom(n_ind,1,0.25)
+    
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl))
+  #AJOUT effet covariables
+  param_ind$CL <- ifelse(param_ind$tabac == 1,
+                         param_ind$CL * 1.333, param_ind$CL)
+  param_ind$CL <- ifelse(param_ind$sexe == 1,
+                         param_ind$CL * 1.2478, param_ind$CL)
+  
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+    print(j)
+  
+  }
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+
+design <- numeric(n_ind)+1 
+df51_temp1_ac <- cbind(design,param_ind,profil_sim)
+
+save(df51_temp1_ac, file = "df51_temp1_ac.RData")
+
+#################################### 2 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 12 # en heures 
+  nb_doses_supp <- 13
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 6, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K", "sexe", "tabac")
+  
+  #AJOUT COVARIABLES
+  param_ind$sexe <- rbinom(n_ind,1,0.5)
+  param_ind$tabac <- rbinom(n_ind,1,0.25)
+    
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl))
+  #AJOUT effet covariables
+  param_ind$CL <- ifelse(param_ind$tabac == 1,
+                         param_ind$CL * 1.333, param_ind$CL)
+  param_ind$CL <- ifelse(param_ind$sexe == 1,
+                         param_ind$CL * 1.2478, param_ind$CL)
+  
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+    print(j)
+  
+  }
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+
+design <- numeric(n_ind)+2 
+df51_temp2_ac <- cbind(design,param_ind,profil_sim)
+
+save(df51_temp2_ac, file = "df51_temp2_ac.RData")
+
+#################################### 3 dose / 24h
+
+### Paramètres de la simulation :
+
+  # - des profils
+  D <- 300 # dose initiale / répétée en mg
+  jours <- 7 # temps de suivi
+  nb_mesures <- jours*24 # donc toutes les heures si = jours * 24
+  inter_doses <- 8 # en heures 
+  nb_doses_supp <- 20
+  t <- seq(0,jours*24,length.out = nb_mesures) # les temps de mesure
+  
+  # - de la base
+  n_ind <- 2000
+  
+### Création de la base finale
+  
+  # paramètres  
+  param_ind <- as.data.frame(matrix(0, ncol = 6, nrow = n_ind))
+  colnames(param_ind) <- c("CL", "V", "Ka", "K", "sexe", "tabac")
+  
+  #AJOUT COVARIABLES
+  param_ind$sexe <- rbinom(n_ind,1,0.5)
+  param_ind$tabac <- rbinom(n_ind,1,0.25)
+    
+  # concentrations
+  profil_sim <- as.data.frame(matrix(0, ncol = nb_mesures, nrow = n_ind)) 
+  colnames(profil_sim) <- t 
+
+### paramètres pop du modèle avec IIV
+
+  sd_IIV_Cl <- 0.608 # IIV log-normal et CV = 60.8%
+  sd_IIV_V <- 1.315 # IIV log-normal et CV = 131.5%
+  # clairance
+  param_ind$CL <- param_ind$CL + 18*exp(rnorm(n_ind,0,sd_IIV_Cl))
+  #AJOUT effet covariables
+  param_ind$CL <- ifelse(param_ind$tabac == 1,
+                         param_ind$CL * 1.333, param_ind$CL)
+  param_ind$CL <- ifelse(param_ind$sexe == 1,
+                         param_ind$CL * 1.2478, param_ind$CL)
+  
+  # volume de distrib
+  param_ind$V <- param_ind$V + 7*70*exp(rnorm(n_ind,0,sd_IIV_V)) 
+  # coeff absorption
+  param_ind$Ka <- param_ind$Ka + 0.136 
+  # facteur à l'absorption
+  fa = 0.817
+  # coeff elimination
+  param_ind$K <- param_ind$K + param_ind$CL / param_ind$V # CL/V
+
+  
+### Simulation des concentrations
+  
+  for (j in 1:n_ind) { # parcours des individus
+    
+    V <- param_ind[j,2]
+    ka <- param_ind[j,3]
+    k <- param_ind[j,4]
+  
+    # première dose
+    C <- (D/V)*(ka/(ka-k))*(exp(-k*t)-exp(-ka*t))
+  
+    # ajout des doses suivantes par superposition 
+    if(nb_doses_supp>0){
+    for (i in 1:(nb_doses_supp)) {
+      indice_t_Di <- min(which(t>=inter_doses*i))
+      avant_t_Di <- numeric(indice_t_Di-1)
+      t_diff <- t[indice_t_Di:length(t)]-t[indice_t_Di]
+      apres_t_Di <- (D/V)*(ka/(ka-k))*(exp(-k*t_diff)-exp(-ka*t_diff))
+      C <- C + c(avant_t_Di,apres_t_Di)
+    }}
+    
+    profil_sim[j,] <- C
+    print(j)
+  
+  }
+  
+### erreur résiduelle (modèle combiné addi + multi)
+  
+  # ecart-type de l'erreur multiplicative 
+  sd_prop <- 0.20 # CV = 26.6
+  # ecart-type de l'erreur additive
+  sd_add <- 0.1   *(10^(-6))*326823
+        #> ATTENTION sd = 0.162 MICROMOL/L, et nos concentrations sont en mg/L
+        #> (homogènes à D/V), donc on récupère la masse molaire de la clozapine
+        #> = 326.823 g/mol = 326823 mg/mol et on converti l'écart-type.
+    
+  # simulation de tous les résidus multiplicatifs (matrice nb_mesures x n_ind)
+  res_prop <- matrix(rnorm(nb_mesures*n_ind,0,sd_prop),
+                     ncol = nb_mesures, nrow = n_ind)
+  
+  # simulation de tous les résidus additifs (matrice nb_mesures x n_ind)
+  res_add <- matrix(rnorm(nb_mesures*n_ind,0,sd_add),
+                     ncol = nb_mesures, nrow = n_ind)  
+  
+  # application des résidus 
+  # (opération terme à terme sur les matrices nb_mesures x n_ind)
+  profil_sim <- profil_sim*(1+res_prop)+res_add
+  
+profil_sim <- fa*profil_sim # différence de modèle avec l'article 43
+
+design <- numeric(n_ind)+3 
+df51_temp3_ac <- cbind(design,param_ind,profil_sim)
+
+save(df51_temp3_ac, file = "df51_temp3_ac.RData")
+
+```
+
+```{r}
+load(file = "df51_temp1_ac.RData")
+load(file = "df51_temp2_ac.RData")
+load(file = "df51_temp3_ac.RData")
+
+df_51_ac <- rbind(df51_temp1_ac,df51_temp2_ac,df51_temp3_ac)
+# save(df_51_ac, file = "df_51_ac.RData")
+head(round(df_51_ac[,1:9],3),3)
+
+```
+
+## Concaténation des deux bases de profils PK simulés, base df_ac
+
+```{r}
+load("df_43_ac.RData")
+load("df_51_ac.RData")
+
+article <- numeric(length(df_43_ac[,1]))+43
+df_43_ac <- cbind(article,df_43_ac)
+
+article <- numeric(length(df_51_ac[,1]))+51
+df_51_ac <- cbind(article,df_51_ac)
+
+df_ac <- rbind(df_43_ac,df_51_ac)
+save(df_ac, file = "df_ac.RData")
+```
+
+
+
