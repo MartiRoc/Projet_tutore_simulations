@@ -1738,7 +1738,7 @@ La base finale contiendra l'origine des profils (quel modèle / article), le des
 - être un homme → +20.8% sur la clairance (RSE % 44.6),
 - pas d'interaction détectée entre les deux covariables.
 
-```{r, echo=FALSE, eval=FALSE}
+```{r, echo=T, eval=FALSE}
 ##################################### design = 1 (1 dose de 300 / 24h)
 
 ### Paramètres de la simulation :
